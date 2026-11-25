@@ -34,7 +34,8 @@
 #' Rehabilitated cropland and grassland (rehab_crop, rehab_grass), in runs with reconversion targets and the
 #' file of the rehabilitation targets (\code{rehab_target_0.5.mz}): the grid cell targets along the time path
 #' of the reconversion targets (\code{s22_reconv_start}, \code{s22_reconv_year1}, \code{s22_reconv_year2}),
-#' at most the cropland_other and grassland of the grid cell, split between them by their area.
+#' at most the cropland_other and grassland of the grid cell, split between them by their area. Target area
+#' above that goes to the remaining cropland_other and grassland of the region, in proportion to their area.
 #'
 #' @param input name of an input dataset, currently only "magpie"
 #' @param startYear last year before the history classes start
@@ -229,18 +230,27 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
     fader1 <- pmin(pmax((yearsInt - milestones[1]) / (milestones[2] - milestones[1]), 0), 1)
     fader2 <- pmin(pmax((yearsInt - milestones[2]) / (milestones[3] - milestones[2]), 0), 1)
     agHr <- dimSums(stateHr[, , c("cropland_other", "grassland")], dim = 3)
+    cellRegion <- mapping[["region"]][match(getCells(landHr), mapping[["cell"]])]
+    stopifnot(!anyNA(cellRegion))
     for (i in seq_along(years)) {
-      target <- targetHr[, , "rehab.m1"] * fader1[i] + (targetHr[, , "rehab.m2"] - targetHr[, , "rehab.m1"]) * fader2[i]
-      share <- pmin(setNames(target, NULL) / replace(agHr[, i, ], agHr[, i, ] <= 0, 1), 1)
+      target <- as.vector(targetHr[, , "rehab.m1"] * fader1[i] +
+                            (targetHr[, , "rehab.m2"] - targetHr[, , "rehab.m1"]) * fader2[i])
+      ag <- as.vector(agHr[, i, ])
+      rehab <- pmin(target, ag)
+      # target above the land of the grid cell on the remaining land of the region
+      short <- tapply(target - rehab, cellRegion, sum)[cellRegion]
+      rest <- ag - rehab
+      restRegion <- tapply(rest, cellRegion, sum)[cellRegion]
+      rehab <- rehab + rest * pmin(short / replace(restRegion, restRegion <= 0, 1), 1)
       rehabHr[, i, ] <- setNames(stateHr[, i, c("cropland_other", "grassland")], c("rehab_crop", "rehab_grass")) *
-        setNames(share, NULL)
+        as.vector(rehab / replace(ag, ag <= 0, 1))
     }
     stateHr[, , c("cropland_other", "grassland")] <- stateHr[, , c("cropland_other", "grassland")] -
       setNames(rehabHr, c("cropland_other", "grassland"))
     missingRehab <- dimSums(targetHr[, , "rehab.m2"], dim = c(1, 3)) - max(dimSums(rehabHr, dim = c(1, 3)))
     if (missingRehab > 1e-6) {
-      toolStatusMessage("warn", paste0("Rehabilitation target above the cropland and grassland of the grid ",
-                                       "cells, up to ", signif(missingRehab, 3), " Mha"))
+      toolStatusMessage("warn", paste0("Rehabilitation target above the cropland and grassland of the ",
+                                       "regions, up to ", signif(missingRehab, 3), " Mha"))
     }
   }
   x <- mbind(stateHr[, , setdiff(stateClasses, "built_up")], recoveringHr, rehabHr, otherHr,
