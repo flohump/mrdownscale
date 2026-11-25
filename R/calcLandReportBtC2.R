@@ -24,7 +24,7 @@
 #'
 #' Reconverted managed forest (recon_forest): secondary forest protected from harvest by the reconversion
 #' targets of the run (\code{p22_reconv_forest}), placed in the grid cells of each cluster in proportion to
-#' the secondary forest that is not recovering land; placed area is kept.
+#' the secondary forest that is not recovering land; placed area is kept where the grid cell keeps it.
 #'
 #' Restoration of the optimisation (the lower bounds \code{p35_land_restoration}): in each cluster the bound
 #' as share of the transitions into the restored type in the optimisation stage; the transitions of each
@@ -75,18 +75,21 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
   }
 
   # Places the reconverted managed forest of each cluster (cluster x years) in its grid cells, in proportion to
-  # the free secondary forest of the grid cells (grid cells x years); the area placed in a year is kept.
+  # the free secondary forest of the grid cells (grid cells x years). Area placed is kept as far as the grid
+  # cell keeps the free secondary forest and the cluster the reconverted forest; only the rest is placed anew.
   .placeForest <- function(forestLr, freeHr, cellCluster) {
     out <- freeHr * 0
     placed <- as.vector(freeHr[, 1, ]) * 0
     years <- getYears(freeHr)
     for (i in seq_along(years)) {
+      target <- as.vector(forestLr[, years[i], ])[match(cellCluster, getCells(forestLr))]
+      placed <- pmin(placed, as.vector(freeHr[, i, ]))
+      placedLr <- tapply(placed, cellCluster, sum)[cellCluster]
+      placed <- placed * pmin(target / replace(placedLr, placedLr <= 0, 1), 1)
       free <- pmax(as.vector(freeHr[, i, ]) - placed, 0)
-      freeLr <- tapply(free, cellCluster, sum)
-      missing <- pmax(as.vector(forestLr[names(freeLr), years[i], ]) - tapply(placed, cellCluster, sum)[names(freeLr)],
-                      0)
-      share <- pmin(missing / replace(freeLr, freeLr <= 0, 1), 1)
-      placed <- placed + free * share[cellCluster]
+      freeLr <- tapply(free, cellCluster, sum)[cellCluster]
+      missing <- pmax(target - tapply(placed, cellCluster, sum)[cellCluster], 0)
+      placed <- placed + free * pmin(missing / replace(freeLr, freeLr <= 0, 1), 1)
       out[, i, ] <- placed
     }
     return(out)
