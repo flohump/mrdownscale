@@ -3,7 +3,7 @@
 #' The land of the downscaling along the transitions in the land classes of the project Bending the Curve
 #' 2.0 (\code{\link{calcLandReportBtC2}}), as grid cell products: \code{cell.land_btc2_0.5.mz} (Mha by grid
 #' cell and class) and a NetCDF file with the share of each class in the grid cell area
-#' (\code{LC_area_share}, classes coded 1 to 10 in the order of the classes) and the grid cell area
+#' (\code{LC_area_share}, classes coded 1 to 12 in the order of the classes) and the grid cell area
 #' (\code{pixel_area}, Mha).
 #'
 #' @param rev revision number of the data. If not provided the current date will be used instead.

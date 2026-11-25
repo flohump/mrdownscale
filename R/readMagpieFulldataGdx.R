@@ -8,7 +8,8 @@
 #' landAccounting (cluster land by type and sub-type, upper bounds of the land transitions), landTransitions,
 #' ageClasses and ageClassTransitions (\code{magpie4::landTransitions}, \code{magpie4::ageClasses},
 #' \code{magpie4::ageClassTransitions}), peatland, landConservation, snv, bii, climateFixYear, restoration
-#' (lower bounds of the restoration of secondary forest and other land) and secdforestCarbonDensity
+#' (lower bounds of the restoration of secondary forest and other land), secdforestCarbonDensity and
+#' reconversionForest (secondary forest protected as reconverted managed forest)
 #' @author Pascal Sauer, Jan Philipp Dietrich, Patrick v. Jeetze
 readMagpieFulldataGdx <- function(subtype) {
   "!# @monitor magpie4:::land"
@@ -135,6 +136,12 @@ readMagpieFulldataGdx <- function(subtype) {
                      dim = 3.2)
     unit <- "tC per ha"
     description <- "Vegetation carbon density of secondary forest by cluster and age class"
+  } else if (subtype == "reconversionForest") {
+    # secondary forest protected as reconverted managed forest (module 22, p22_reconv_forest); runs before
+    # that output: target minus shortfall; zero in runs without reconversion targets
+    x <- .reconversionForest(gdx, unique(clustermap[["cluster"]]))
+    unit <- "Mha"
+    description <- "Secondary forest protected as reconverted managed forest by cluster"
   } else if (subtype == "climateFixYear") {
     return(list(x = as.numeric(gdx2::readGDX(gdx, "sm_fix_cc")), class = "numeric"))
   } else {
@@ -144,4 +151,17 @@ readMagpieFulldataGdx <- function(subtype) {
   attr(x, "gdxMetadata") <- NULL
 
   return(list(x = x, min = 0, unit = unit, description = description))
+}
+
+# Secondary forest protected as reconverted managed forest by cluster (see subtype reconversionForest).
+.reconversionForest <- function(gdx, clusters) {
+  x <- gdx2::readGDX(gdx, "p22_reconv_forest", react = "silent")
+  target <- gdx2::readGDX(gdx, "i22_reconv_target", react = "silent")
+  if (is.null(x) && !is.null(target)) {
+    x <- collapseDim(target[, , "forest"] - gdx2::readGDX(gdx, "p22_reconv_shortfall")[, , "forest"], dim = 3)
+  }
+  if (is.null(x)) {
+    x <- new.magpie(clusters, gdx2::readGDX(gdx, "t"), NULL, fill = 0)
+  }
+  return(x)
 }

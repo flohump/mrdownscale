@@ -13,36 +13,32 @@
 #'   \item nat_regen_forest: primary and secondary forest, NDC forest, and afforestation if it is not
 #'   established as plantation (\code{s32_aff_plantation});
 #'   \item forest_planted: timber plantations, other planted forest, and afforestation as plantation;
-#'   \item built_up_areas: urban land.
+#'   \item built_up: urban land.
 #' }
-#' Classes of the history of other land (othernat and youngsecdf), along the grid cell transitions from the
-#' first year on (\code{\link{toolGriddedLandOrigin}}): area that came from cropland (rest_abn_crop), pasture
-#' (rest_abn_grass), or timber plantations and other planted forest (rest_forest) keeps its class until it
-#' leaves other land; the rest (other land of the first year, from NDC forest, afforestation and urban land)
-#' is other. Maturation to secondary forest and the conversion to NDC forest and to afforestation that is
-#' not a plantation take the area that entered other land first; all other conversions the area that
-#' entered last.
+#' Classes of the history of natural land (other land and secondary forest), along the grid cell transitions
+#' from \code{startYear} on (\code{\link{toolGriddedLandOrigin}}): area that came from cropland
+#' (recon_abn_crop), pasture (recon_abn_grass), or timber plantations and other planted forest (recon_forest)
+#' keeps its class while it stays natural, also when other land matures to secondary forest; the rest is other
+#' or nat_regen_forest. Conversions take the area that entered last; maturation and the conversion to NDC forest
+#' and to afforestation that is not a plantation take the area that entered first.
+#'
+#' Reconverted managed forest (recon_forest): secondary forest protected from harvest by the reconversion
+#' targets of the run (\code{p22_reconv_forest}), placed in the grid cells of each cluster in proportion to
+#' the secondary forest that is not recovering land; placed area is kept.
 #'
 #' Restoration of the optimisation (the lower bounds \code{p35_land_restoration}): in each cluster the bound
 #' as share of the transitions into the restored type in the optimisation stage; the transitions of each
-#' grid cell are split by this share. All outflows of other land except recovery and maturation (conversions
-#' and harvest) take restored land only after all other area of the type in the grid cell; where the land
-#' loses more, restored land is taken. Where the same happens on the cluster sums, the model converts the
-#' restored land itself (MAgPIE protects restored land only as area of its type in the cluster), reported as a
-#' note; restored land taken beyond that comes from the placement in grid cells and is reported with a warning.
+#' grid cell are split by this share. Conversions take restored land (and in runs with reconversion targets
+#' all land from cropland and pasture) only after all other area of the type in the grid cell.
 #'
-#' Land that enters secondary forest directly (from cropland, pasture, forestry or urban land) counts as
-#' recovering land of its origin until it reaches the age at which MAgPIE matures youngsecdf: the first age
-#' class with a vegetation carbon density of secondary forest above 20 tC/ha in its cluster
-#' (modules/35_natveg/pot_forest_may24/presolve.gms). A loss of secondary forest in a grid cell takes from
-#' this land in proportion to the area of secondary forest, from restored land only beyond all other
-#' secondary forest.
+#' Rehabilitated cropland and grassland (rehab_crop, rehab_grass) are not yet filled.
 #'
 #' @param input name of an input dataset, currently only "magpie"
+#' @param startYear last year before the history classes start
 #' @return land by grid cell and class (Mha) in the years of the input
-#' @author Patrick v. Jeetze
+#' @author Patrick v. Jeetze, Florian Humpenoeder
 #' @seealso \code{\link{fullBTC2}}, \code{\link{toolGriddedLandOrigin}}
-calcLandReportBtC2 <- function(input = "magpie") {
+calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
   # Land report of the run in one of the MAgPIE formats, with the arguments of fullDOWNSCALEDMAGPIE (same cache).
   .report <- function(outputFormat) {
     x <- calcOutput("LandReport", outputFormat = outputFormat, input = input, harmonizationPeriod = c(2015, 2050),
@@ -78,47 +74,21 @@ calcLandReportBtC2 <- function(input = "magpie") {
     return(mbind(transitionsHr, restored[["secdforest"]], restored[["other"]]))
   }
 
-  # Land that entered secondary forest directly, by grid cell and origin (sources in restoredFrom), until its
-  # maturation age (grid cells x years of transitionsHr); secondary forest lost by a grid cell takes from it
-  # in proportion, from the protected origins only beyond all other secondary forest. The cohorts are an array:
-  # slices are written in a loop, which in magclass takes about 4000 times as long (see toolGriddedLandOrigin).
-  .directSecdforest <- function(transitionsHr, secdforestStartHr, restoredFrom, protected, maturityAge) {
-    stage <- getItems(transitionsHr, "stage", full = TRUE)
-    from <- getItems(transitionsHr, "from", full = TRUE)
-    to <- getItems(transitionsHr, "to", full = TRUE)
-    years <- getYears(transitionsHr, as.integer = TRUE)
-    nCell <- ncells(transitionsHr)
-    secdforest <- as.vector(secdforestStartHr)
-    cohorts <- array(0, c(nCell, length(restoredFrom), length(years)))
-    out <- new.magpie(getCells(transitionsHr), years, restoredFrom, fill = 0)
-    lost <- stats::setNames(rep(0, length(years)), years)
+  # Places the reconverted managed forest of each cluster (cluster x years) in its grid cells, in proportion to
+  # the free secondary forest of the grid cells (grid cells x years); the area placed in a year is kept.
+  .placeForest <- function(forestLr, freeHr, cellCluster) {
+    out <- freeHr * 0
+    placed <- as.vector(freeHr[, 1, ]) * 0
+    years <- getYears(freeHr)
     for (i in seq_along(years)) {
-      for (e in seq_len(i - 1)) {
-        cohorts[years[i] - years[e] >= maturityAge[, i], , e] <- 0
-      }
-      flows <- matrix(transitionsHr[, i, ], nrow = nCell)
-      for (s in unique(stage)) {
-        outflow <- rowSums(flows[, stage == s & from == "secdforest" & to != "secdforest", drop = FALSE])
-        inflow <- rowSums(flows[, stage == s & to == "secdforest" & from != "secdforest", drop = FALSE])
-        protectedArea <- rowSums(cohorts[, protected, , drop = FALSE])
-        free <- secdforest - protectedArea
-        cohorts[, !protected, ] <- cohorts[, !protected, , drop = FALSE] *
-          (1 - pmin(outflow / replace(free, free <= 0, 1), 1))
-        excess <- pmin(pmax(outflow - free, 0), protectedArea)
-        cohorts[, protected, ] <- cohorts[, protected, , drop = FALSE] *
-          (1 - excess / replace(protectedArea, protectedArea <= 0, 1))
-        lost[i] <- lost[i] + sum(excess)
-        # the outflow beyond the area at the start of the stage passes through from the inflow of the stage
-        remaining <- 1 - pmin(pmax(outflow - secdforest, 0) / replace(inflow, inflow <= 0, 1), 1)
-        for (k in seq_along(restoredFrom)) {
-          entering <- stage == s & to == "secdforest" & from == restoredFrom[k]
-          cohorts[, k, i] <- cohorts[, k, i] + rowSums(flows[, entering, drop = FALSE]) * remaining
-        }
-        secdforest <- secdforest + inflow - outflow
-      }
-      out[, i, ] <- rowSums(cohorts, dims = 2)
+      free <- pmax(as.vector(freeHr[, i, ]) - placed, 0)
+      freeLr <- tapply(free, cellCluster, sum)
+      missing <- pmax(as.vector(forestLr[names(freeLr), years[i], ]) - tapply(placed, cellCluster, sum)[names(freeLr)],
+                      0)
+      share <- pmin(missing / replace(freeLr, freeLr <= 0, 1), 1)
+      placed <- placed + free * share[cellCluster]
+      out[, i, ] <- placed
     }
-    attr(out, "lost") <- lost
     return(out)
   }
 
@@ -128,9 +98,13 @@ calcLandReportBtC2 <- function(input = "magpie") {
   landHr <- .report("downscaledmagpie")
   splitHr <- .report("downscaledmagpieSplit")
   transitionsHr <- calcOutput("LandTransitionsHighRes", input = input, aggregate = FALSE)[["transitionsHr"]]
-  transitionsHr <- transitionsHr[, getYears(landHr)[-1], ]
+  years <- getYears(landHr)
+  trackYears <- years[getYears(landHr, as.integer = TRUE) > startYear]
+  start <- paste0("y", startYear)
+  transitionsHr <- transitionsHr[, trackYears, ]
   mapping <- readSource("MagpieFulldataGdx", subtype = "clustermap")
   cfg <- readSource("MagpieRunFiles", subtype = "config")
+  reconversion <- isTRUE(as.numeric(cfg$gms$s22_reconversion) == 1)
 
   # =================================================================================================
   # Classes of the state of the land
@@ -146,15 +120,15 @@ calcLandReportBtC2 <- function(input = "magpie") {
   classOf["forestry.ndc.total"] <- "nat_regen_forest"
   affPlantation <- as.logical(cfg$gms$s32_aff_plantation)
   classOf["forestry.aff.total"] <- if (affPlantation) "forest_planted" else "nat_regen_forest"
-  classOf[startsWith(splitItems, "urban.")] <- "built_up_areas"
+  classOf[startsWith(splitItems, "urban.")] <- "built_up"
   stateClasses <- c("cropland_other", "cropland_2Gbioen", "grassland", "nat_regen_forest", "forest_planted",
-                    "built_up_areas")
+                    "built_up")
   stateHr <- mbind(lapply(stateClasses, function(class) {
     setNames(dimSums(splitHr[, , names(which(classOf == class))], dim = 3), class)
   }))
 
   # =================================================================================================
-  # Classes of the history of other land
+  # Classes of the history of natural land
   # =================================================================================================
 
   # restored land as source "<source>Restored"; labels "stage.from.to" with the sub-types of other land and
@@ -162,12 +136,6 @@ calcLandReportBtC2 <- function(input = "magpie") {
   # "timber", NDC forest and afforestation as "forestry"
   transitionsHr <- .splitRestoration(transitionsHr, readSource("MagpieFulldataGdx", subtype = "restoration"),
                                      mapping)
-  # cropland, pasture and forestry become secondary forest only by restoration (q35_secdforest_regeneration), so
-  # none of their transitions into secondary forest stays without the restored source
-  unrestored <- getItems(transitionsHr, "to", full = TRUE) == "secdforest" &
-    getItems(transitionsHr, "from", full = TRUE) %in% c("crop", "past", "forestry")
-  toolExpectTrue(sum(transitionsHr[, , unrestored]) <= 1e-5,
-                 "Transitions from cropland, pasture and forestry into secondary forest are restoration")
   restored <- endsWith(getItems(transitionsHr, "from", full = TRUE), "Restored")
   fromLabel <- getItems(transitionsHr, "fromType", full = TRUE)
   fromLabel[fromLabel == "total"] <- getItems(transitionsHr, "from", full = TRUE)[fromLabel == "total"]
@@ -182,71 +150,75 @@ calcLandReportBtC2 <- function(input = "magpie") {
   }))
   getSets(transitionsHr, fulldim = FALSE)[3] <- "stage.from.to"
 
-  restoredOther <- c("cropRestored", "pastRestored")
+  # origins of each history class; conversions take them only after all other area where they are protected
+  originsOf <- list(recon_abn_crop = c("crop", "cropRestored"), recon_abn_grass = c("past", "pastRestored"),
+                    recon_forest = c("timber", "timberRestored"))
+  protectedOrigins <- c("cropRestored", "pastRestored", if (reconversion) c("crop", "past"))
+  types <- c("othernat", "youngsecdf", "secdforest")
   naturalForestry <- c("ndc", if (!affPlantation) "aff")
-  oldest <- c("youngsecdf.secdforest", paste(rep(c("othernat", "youngsecdf"), each = length(naturalForestry)),
-                                             naturalForestry, sep = "."))
+  oldest <- c("youngsecdf.secdforest", paste(rep(c("othernat", "youngsecdf", "secdforest"),
+                                                 each = length(naturalForestry)), naturalForestry, sep = "."))
   outflowOrder <- c(default = "newest", stats::setNames(rep("oldest", length(oldest)), oldest))
-  last <- list(default = restoredOther, othernat.youngsecdf = character(0), youngsecdf.secdforest = character(0))
-  startHr <- setNames(splitHr[, 1, c("other.othernat.total", "other.youngsecdf.total")], c("othernat", "youngsecdf"))
-  originHr <- toolGriddedLandOrigin(transitionsHr, startHr, c("othernat", "youngsecdf"), order = outflowOrder,
-                                    last = last)
+  last <- list(default = protectedOrigins, othernat.youngsecdf = character(0), youngsecdf.secdforest = character(0))
+  startItems <- c("other.othernat.total", "other.youngsecdf.total")
+  stopifnot(all(startItems %in% splitItems))
+  startHr <- mbind(setNames(splitHr[, start, startItems], c("othernat", "youngsecdf")),
+                   setNames(landHr[, start, "secdforest"], "secdforest"))
+  originHr <- toolGriddedLandOrigin(transitionsHr, startHr, types, order = outflowOrder, last = last)
 
-  # land that entered secondary forest directly, as recovering land until its maturation age
-  densityLr <- readSource("MagpieFulldataGdx", subtype = "secdforestCarbonDensity")[, getYears(transitionsHr), ]
-  # age of each age class from its name (ac0, ac5, ...; acx, the oldest, never matures)
-  age <- suppressWarnings(as.numeric(sub("^ac", "", getItems(densityLr, dim = 3))))
-  # maturation threshold of 20 tC/ha, keep in sync with p35_maturesecdf in
-  # modules/35_natveg/pot_forest_may24/presolve.gms
-  maturityAgeLr <- apply(as.array(densityLr > 20), c(1, 2), function(x) min(age[x & !is.na(age)], Inf))
-  cellCluster <- mapping[["cluster"]][match(getCells(landHr), mapping[["cell"]])]
-  restoredFrom <- c("crop", "past", "timber", "forestry", "urban", "cropRestored", "pastRestored",
-                    "timberRestored", "forestryRestored")
-  directHr <- .directSecdforest(transitionsHr, landHr[, 1, "secdforest"], restoredFrom,
-                                endsWith(restoredFrom, "Restored"), maturityAgeLr[cellCluster, , drop = FALSE])
-  takenRestored <- attr(originHr, "takenLast") + attr(directHr, "lost")
-  directHr <- mbind(setYears(directHr[, 1, ] * 0, getYears(landHr)[1]), directHr)
-
-  # the same on the cluster sums: restored land that the model converts itself (MAgPIE protects restored land
-  # only as area of its type in the cluster); the rest of the restored land taken comes from the placement
+  # the same on the cluster sums: protected land that the model converts itself (MAgPIE protects it only as
+  # area of its type in the cluster); the rest of the protected land taken comes from the placement
   transitionsLr <- toolAggregate(transitionsHr, mapping, from = "cell", to = "cluster")
   originLr <- toolGriddedLandOrigin(transitionsLr, toolAggregate(startHr, mapping, from = "cell", to = "cluster"),
-                                    c("othernat", "youngsecdf"), order = outflowOrder, last = last)
-  directLr <- .directSecdforest(transitionsLr,
-                                toolAggregate(landHr[, 1, "secdforest"], mapping, from = "cell", to = "cluster"),
-                                restoredFrom, endsWith(restoredFrom, "Restored"),
-                                maturityAgeLr[getCells(transitionsLr), , drop = FALSE])
-  takenByModel <- attr(originLr, "takenLast") + attr(directLr, "lost")
-  takenByPlacement <- pmax(takenRestored - takenByModel, 0)
+                                    types, order = outflowOrder, last = last)
+  takenByModel <- attr(originLr, "takenLast")
+  takenByPlacement <- pmax(attr(originHr, "takenLast") - takenByModel, 0)
 
-  # the history classes, each of its origins in other land and in direct secondary forest
-  originsOf <- list(rest_abn_crop = c("crop", "cropRestored"), rest_abn_grass = c("past", "pastRestored"),
-                    rest_forest = c("timber", "timberRestored"))
-  recoveringHr <- mbind(lapply(names(originsOf), function(class) {
-    items <- intersect(outer(c("othernat", "youngsecdf"), originsOf[[class]], paste, sep = "."),
-                       getItems(originHr, dim = 3))
-    area <- dimSums(directHr[, , originsOf[[class]]], dim = 3)
+  # the history classes in all years (zero up to startYear), each of its origins in the tracked types
+  .origins <- function(x, type, origins) {
+    items <- intersect(paste(type, origins, sep = "."), getItems(x, dim = 3))
+    area <- new.magpie(getCells(landHr), years, NULL, fill = 0)
     if (length(items) > 0) {
-      area <- dimSums(originHr[, , items], dim = 3) + area
+      area[, trackYears, ] <- dimSums(x[, trackYears, items], dim = 3)
     }
-    setNames(area, class)
+    return(area)
+  }
+  recoveringHr <- mbind(lapply(names(originsOf), function(class) {
+    setNames(.origins(originHr, types, originsOf[[class]]), class)
   }))
-  otherHr <- setNames(landHr[, , "other"] + dimSums(directHr, dim = 3) - dimSums(recoveringHr, dim = 3), "other")
-  stateHr[, , "nat_regen_forest"] <- stateHr[, , "nat_regen_forest"] - dimSums(directHr, dim = 3)
+  recoveringOther <- .origins(originHr, c("othernat", "youngsecdf"), unlist(originsOf))
+  recoveringSecdforest <- .origins(originHr, "secdforest", unlist(originsOf))
+  otherHr <- setNames(landHr[, , "other"] - recoveringOther, "other")
+  stateHr[, , "nat_regen_forest"] <- stateHr[, , "nat_regen_forest"] - recoveringSecdforest
+
+  # reconverted managed forest of the run, on the secondary forest that is not recovering land
+  forestLr <- readSource("MagpieFulldataGdx", subtype = "reconversionForest")
+  cellCluster <- mapping[["cluster"]][match(getCells(landHr), mapping[["cell"]])]
+  freeHr <- setNames(landHr[, , "secdforest"] - recoveringSecdforest, NULL)
+  placedHr <- .placeForest(forestLr[unique(cellCluster), years, ], freeHr, cellCluster)
+  recoveringHr[, , "recon_forest"] <- recoveringHr[, , "recon_forest"] + placedHr
+  stateHr[, , "nat_regen_forest"] <- stateHr[, , "nat_regen_forest"] - placedHr
+  missingForest <- dimSums(forestLr[unique(cellCluster), years, ], dim = c(1, 3)) - dimSums(placedHr, dim = c(1, 3))
+  if (max(missingForest) > 1e-6) {
+    worst <- getYears(missingForest)[which.max(missingForest)]
+    toolStatusMessage("warn", paste0("Reconverted managed forest not placed for lack of secondary forest, up to ",
+                                     signif(max(missingForest), 3), " Mha (", worst, ")"))
+  }
 
   if (max(takenByModel) > 1e-6) {
-    toolStatusMessage("note", paste0("MAgPIE converted restored land (it protects restored land only as area of ",
-                                     "its type in the cluster), up to ", signif(max(takenByModel), 3),
-                                     " Mha in a time step (", names(which.max(takenByModel)), ")"))
+    toolStatusMessage("note", paste0("MAgPIE converted protected land (it protects it only as area of its type ",
+                                     "in the cluster), up to ", signif(max(takenByModel), 3), " Mha in a time ",
+                                     "step (", names(which.max(takenByModel)), ")"))
   }
   if (max(takenByPlacement) > 1e-6) {
-    toolStatusMessage("warn", paste0("The grid cell placement converted restored land beyond the model, up to ",
+    toolStatusMessage("warn", paste0("The grid cell placement converted protected land beyond the model, up to ",
                                      signif(max(takenByPlacement), 3), " Mha in a time step (",
                                      names(which.max(takenByPlacement)), ")"))
   }
 
-  x <- mbind(stateHr[, , setdiff(stateClasses, "built_up_areas")], recoveringHr, otherHr,
-             stateHr[, , "built_up_areas"])
+  rehabHr <- setNames(stateHr[, , c("cropland_other", "grassland")] * 0, c("rehab_crop", "rehab_grass"))
+  x <- mbind(stateHr[, , setdiff(stateClasses, "built_up")], recoveringHr, rehabHr, otherHr,
+             stateHr[, , "built_up"])
   getSets(x, fulldim = FALSE) <- c("x.y.iso", "year", "class")
   toolExpectLessDiff(dimSums(x, dim = 3), dimSums(landHr, dim = 3), 1e-6,
                      "The classes cover all land of the grid cells")
