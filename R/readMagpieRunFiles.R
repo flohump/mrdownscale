@@ -4,8 +4,8 @@
 #' folder of a run (see \code{\link{downscaleRun}}).
 #'
 #' @param subtype type of data to be read in: config, landuseInit, availableCropland, potentialForest,
-#' potentialForestUncorrected, urban, wdpa, conservationPriority, snvTarget, peatland, sideLayers, or
-#' available (the subtypes whose file exists)
+#' potentialForestUncorrected, urban, wdpa, conservationPriority, snvTarget, peatland, sideLayers,
+#' rehabTarget (BtC2 rehabilitation targets), or available (the subtypes whose file exists)
 #' @author Patrick v. Jeetze
 readMagpieRunFiles <- function(subtype) {
   file <- c(config = "config.yml",
@@ -18,7 +18,8 @@ readMagpieRunFiles <- function(subtype) {
             conservationPriority = "consv_prio_areas_0.5.mz",
             snvTarget = "SNVTargetCropland_0.5.mz",
             peatland = "f58_peatland_area_0.5.mz",
-            sideLayers = "luh2_side_layers_0.5.mz")
+            sideLayers = "luh2_side_layers_0.5.mz",
+            rehabTarget = "rehab_target_0.5.mz")
 
   if (subtype == "available") {
     return(list(x = names(file)[file.exists(file)], class = "character"))

@@ -31,7 +31,10 @@
 #' grid cell are split by this share. Conversions take restored land (and in runs with reconversion targets
 #' all land from cropland and pasture) only after all other area of the type in the grid cell.
 #'
-#' Rehabilitated cropland and grassland (rehab_crop, rehab_grass) are not yet filled.
+#' Rehabilitated cropland and grassland (rehab_crop, rehab_grass), in runs with reconversion targets and the
+#' file of the rehabilitation targets (\code{rehab_target_0.5.mz}): the grid cell targets along the time path
+#' of the reconversion targets (\code{s22_reconv_start}, \code{s22_reconv_year1}, \code{s22_reconv_year2}),
+#' at most the cropland_other and grassland of the grid cell, split between them by their area.
 #'
 #' @param input name of an input dataset, currently only "magpie"
 #' @param startYear last year before the history classes start
@@ -217,7 +220,29 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
                                      names(which.max(takenByPlacement)), ")"))
   }
 
+  # rehabilitated cropland and grassland on the grid cell targets, linear between the milestones
   rehabHr <- setNames(stateHr[, , c("cropland_other", "grassland")] * 0, c("rehab_crop", "rehab_grass"))
+  if (reconversion && "rehabTarget" %in% readSource("MagpieRunFiles", subtype = "available")) {
+    targetHr <- readSource("MagpieRunFiles", subtype = "rehabTarget")[getCells(landHr), , ]
+    milestones <- as.numeric(cfg$gms[c("s22_reconv_start", "s22_reconv_year1", "s22_reconv_year2")])
+    yearsInt <- getYears(landHr, as.integer = TRUE)
+    fader1 <- pmin(pmax((yearsInt - milestones[1]) / (milestones[2] - milestones[1]), 0), 1)
+    fader2 <- pmin(pmax((yearsInt - milestones[2]) / (milestones[3] - milestones[2]), 0), 1)
+    agHr <- dimSums(stateHr[, , c("cropland_other", "grassland")], dim = 3)
+    for (i in seq_along(years)) {
+      target <- targetHr[, , "rehab.m1"] * fader1[i] + (targetHr[, , "rehab.m2"] - targetHr[, , "rehab.m1"]) * fader2[i]
+      share <- pmin(setNames(target, NULL) / replace(agHr[, i, ], agHr[, i, ] <= 0, 1), 1)
+      rehabHr[, i, ] <- setNames(stateHr[, i, c("cropland_other", "grassland")], c("rehab_crop", "rehab_grass")) *
+        setNames(share, NULL)
+    }
+    stateHr[, , c("cropland_other", "grassland")] <- stateHr[, , c("cropland_other", "grassland")] -
+      setNames(rehabHr, c("cropland_other", "grassland"))
+    missingRehab <- dimSums(targetHr[, , "rehab.m2"], dim = c(1, 3)) - max(dimSums(rehabHr, dim = c(1, 3)))
+    if (missingRehab > 1e-6) {
+      toolStatusMessage("warn", paste0("Rehabilitation target above the cropland and grassland of the grid ",
+                                       "cells, up to ", signif(missingRehab, 3), " Mha"))
+    }
+  }
   x <- mbind(stateHr[, , setdiff(stateClasses, "built_up")], recoveringHr, rehabHr, otherHr,
              stateHr[, , "built_up"])
   getSets(x, fulldim = FALSE) <- c("x.y.iso", "year", "class")
