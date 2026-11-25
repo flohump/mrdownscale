@@ -76,7 +76,7 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
 
   # Places the reconverted managed forest of each cluster (cluster x years) in its grid cells, in proportion to
   # the free secondary forest of the grid cells (grid cells x years). Area placed is kept as far as the grid
-  # cell keeps the free secondary forest and the cluster the reconverted forest; only the rest is placed anew.
+  # cell keeps the free secondary forest (class 8 does not decrease); only the rest is placed anew.
   .placeForest <- function(forestLr, freeHr, cellCluster) {
     out <- freeHr * 0
     placed <- as.vector(freeHr[, 1, ]) * 0
@@ -84,8 +84,6 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
     for (i in seq_along(years)) {
       target <- as.vector(forestLr[, years[i], ])[match(cellCluster, getCells(forestLr))]
       placed <- pmin(placed, as.vector(freeHr[, i, ]))
-      placedLr <- tapply(placed, cellCluster, sum)[cellCluster]
-      placed <- placed * pmin(target / replace(placedLr, placedLr <= 0, 1), 1)
       free <- pmax(as.vector(freeHr[, i, ]) - placed, 0)
       freeLr <- tapply(free, cellCluster, sum)[cellCluster]
       missing <- pmax(target - tapply(placed, cellCluster, sum)[cellCluster], 0)
@@ -179,7 +177,7 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
 
   # the history classes in all years (zero up to startYear), each of its origins in the tracked types
   .origins <- function(x, type, origins) {
-    items <- intersect(paste(type, origins, sep = "."), getItems(x, dim = 3))
+    items <- intersect(outer(type, origins, paste, sep = "."), getItems(x, dim = 3))
     area <- new.magpie(getCells(landHr), years, NULL, fill = 0)
     if (length(items) > 0) {
       area[, trackYears, ] <- dimSums(x[, trackYears, items], dim = 3)
