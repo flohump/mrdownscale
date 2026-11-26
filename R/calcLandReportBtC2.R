@@ -24,7 +24,9 @@
 #'
 #' Reconverted managed forest (recon_forest): secondary forest protected from harvest by the reconversion
 #' targets of the run (\code{p22_reconv_forest}), placed in the grid cells of each cluster in proportion to
-#' the secondary forest that is not recovering land; placed area is kept where the grid cell keeps it.
+#' the secondary forest that is not recovering land; placed area is kept where the grid cell keeps it. Where
+#' that is short, the rest goes to secondary forest from cropland and pasture beyond the cluster's
+#' reconversion target of agricultural land.
 #'
 #' Restoration of the optimisation (the lower bounds \code{p35_land_restoration}): in each cluster the bound
 #' as share of the transitions into the restored type in the optimisation stage; the transitions of each
@@ -203,7 +205,24 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
   placedHr <- .placeForest(forestLr[unique(cellCluster), years, ], freeHr, cellCluster)
   recoveringHr[, , "recon_forest"] <- recoveringHr[, , "recon_forest"] + placedHr
   stateHr[, , "nat_regen_forest"] <- stateHr[, , "nat_regen_forest"] - placedHr
-  missingForest <- dimSums(forestLr[unique(cellCluster), years, ], dim = c(1, 3)) - dimSums(placedHr, dim = c(1, 3))
+  # the rest on secondary forest from cropland and pasture beyond the reconversion target of the cluster
+  agClasses <- c("recon_abn_crop", "recon_abn_grass")
+  abnSecdHr <- mbind(lapply(agClasses, function(class) {
+    setNames(.origins(originHr, "secdforest", originsOf[[class]]), class)
+  }))
+  .toCluster <- function(x) toolAggregate(dimSums(x, dim = 3), mapping, from = "cell", to = "cluster")
+  restLr <- forestLr[unique(cellCluster), years, ] - .toCluster(placedHr)[unique(cellCluster), , ]
+  aboveLr <- .toCluster(recoveringHr[, , agClasses])[unique(cellCluster), , ] -
+    readSource("MagpieFulldataGdx", subtype = "reconversionAg")[unique(cellCluster), years, ]
+  abnSecdLr <- .toCluster(abnSecdHr)[unique(cellCluster), , ]
+  shareLr <- pmin(pmax(pmin(restLr, aboveLr), 0) / replace(abnSecdLr, abnSecdLr <= 0, 1), 1)
+  movedHr <- abnSecdHr * setNames(toolAggregate(shareLr, mapping, from = "cluster", to = "cell")[getCells(landHr), , ],
+                                  NULL)
+  recoveringHr[, , agClasses] <- recoveringHr[, , agClasses] - movedHr
+  recoveringHr[, , "recon_forest"] <- recoveringHr[, , "recon_forest"] + dimSums(movedHr, dim = 3)
+  placedHr <- placedHr + dimSums(movedHr, dim = 3)
+  missingForest <- dimSums(pmax(forestLr[unique(cellCluster), years, ] -
+                                  .toCluster(placedHr)[unique(cellCluster), , ], 0), dim = c(1, 3))
   if (max(missingForest) > 1e-6) {
     worst <- getYears(missingForest)[which.max(missingForest)]
     toolStatusMessage("warn", paste0("Reconverted managed forest not placed for lack of secondary forest, up to ",
