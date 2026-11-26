@@ -113,8 +113,8 @@ fullBTC2 <- function(rev = numeric_version("0"), projectName = "BTC2", model = "
                               longname = paste("share of total pixel area that was restored in each 5-year",
                                                "(or 10-year, depending on IAM) period"),
                               dim = list(dimLon, dimLat, dimTime, .dimClass(ageClasses), dimConv), missval = NaN,
-                              prec = "double", compression = 9)
-  # one class at a time (the whole grid in double precision would take about 8 GB)
+                              prec = "float", compression = 9)
+  # one class at a time (the whole grid would take about 8 GB); single precision halves the file
   .fillFraction <- function(nc, v) {
     if (v$name == "pixel_area") {
       return(.fill(NULL)(nc, v))
@@ -130,7 +130,7 @@ fullBTC2 <- function(rev = numeric_version("0"), projectName = "BTC2", model = "
         untracked <- untracked * keep
         cohorts <- cohorts * keep
         cohorts[, i - 1] <- cohorts[, i - 1] + pmax(area[, i] - before, 0)
-        frac[, i, ] <- cohorts / pixelArea
+        frac[, i, ] <- pmax(cohorts, 0) / pixelArea
       }
       ncdf4::ncvar_put(nc, v, .toGrid(frac, dim(frac)[2:3]), start = c(1, 1, 1, k, 1),
                        count = c(-1, -1, -1, 1, -1))
