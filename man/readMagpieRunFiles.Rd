@@ -8,8 +8,8 @@ readMagpieRunFiles(subtype)
 }
 \arguments{
 \item{subtype}{type of data to be read in: config, landuseInit, availableCropland, potentialForest,
-potentialForestUncorrected, urban, wdpa, conservationPriority, snvTarget, peatland, sideLayers, or
-available (the subtypes whose file exists)}
+potentialForestUncorrected, urban, wdpa, conservationPriority, snvTarget, peatland, sideLayers,
+rehabTarget (BtC2 rehabilitation targets), or available (the subtypes whose file exists)}
 }
 \description{
 Read function for the config and the 0.5 degree input files that MAgPIE exports to the output

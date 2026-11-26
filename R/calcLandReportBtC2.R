@@ -42,10 +42,12 @@
 #'
 #' @param input name of an input dataset, currently only "magpie"
 #' @param startYear last year before the history classes start
+#' @param fate FALSE: the classes; TRUE: recon_abn_crop and recon_abn_grass split into forest (young secondary
+#' forest of other land and secondary forest) and nonforest (other natural land)
 #' @return land by grid cell and class (Mha) in the years of the input
 #' @author Patrick v. Jeetze, Florian Humpenoeder
 #' @seealso \code{\link{fullBTC2}}, \code{\link{toolGriddedLandOrigin}}
-calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
+calcLandReportBtC2 <- function(input = "magpie", startYear = 2020, fate = FALSE) {
   # Land report of the run in one of the MAgPIE formats, with the arguments of fullDOWNSCALEDMAGPIE (same cache).
   .report <- function(outputFormat) {
     x <- calcOutput("LandReport", outputFormat = outputFormat, input = input, harmonizationPeriod = c(2015, 2050),
@@ -222,6 +224,19 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
   recoveringHr[, , agClasses] <- recoveringHr[, , agClasses] - movedHr
   recoveringHr[, , "recon_forest"] <- recoveringHr[, , "recon_forest"] + dimSums(movedHr, dim = 3)
   placedHr <- placedHr + dimSums(movedHr, dim = 3)
+  if (fate) {
+    .fate <- function(fateTypes, name) {
+      x <- mbind(lapply(agClasses, function(class) setNames(.origins(originHr, fateTypes, originsOf[[class]]), class)))
+      return(add_dimension(x, dim = 3.2, add = "fate", nm = name))
+    }
+    forest <- .fate(c("youngsecdf", "secdforest"), "forest") -
+      add_dimension(movedHr, dim = 3.2, add = "fate", nm = "forest")
+    x <- mbind(forest, .fate("othernat", "nonforest"))
+    toolExpectLessDiff(dimSums(x, dim = 3.2), recoveringHr[, , agClasses], 1e-6,
+                       "Forest and non-forest cover classes 6 and 7")
+    return(list(x = x, isocountries = FALSE, unit = "Mha", cache = FALSE,
+                description = "Fate of reconverted and abandoned cropland and grassland by grid cell"))
+  }
   missingForest <- dimSums(pmax(forestLr[unique(cellCluster), years, ] -
                                   .toCluster(placedHr)[unique(cellCluster), , ], 0), dim = c(1, 3))
   if (max(missingForest) > 1e-6) {

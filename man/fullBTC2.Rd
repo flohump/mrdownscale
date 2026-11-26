@@ -6,27 +6,45 @@
 \usage{
 fullBTC2(
   rev = numeric_version("0"),
-  projectName = "BtC2v04",
+  projectName = "BTC2",
+  model = "MAgPIE",
+  runNr = "run1",
   logFile = "consistencyCheck_BtC2.log"
 )
 }
 \arguments{
 \item{rev}{revision number of the data. If not provided the current date will be used instead.}
 
-\item{projectName}{prefix of the NetCDF file name (left out where the title of the run contains it)}
+\item{projectName}{first part of the NetCDF file names}
+
+\item{model}{name of the model in the NetCDF file names}
+
+\item{runNr}{run number in the NetCDF file names}
 
 \item{logFile}{name of the log of the consistency checks}
 }
 \description{
 The land of the downscaling along the transitions in the land classes of the project Bending the Curve
 2.0 (\code{\link{calcLandReportBtC2}}), as grid cell products: \code{cell.land_btc2_0.5.mz} (Mha by grid
-cell and class) and a NetCDF file with the share of each class in the grid cell area
-(\code{LC_area_share}, classes coded 1 to 10 in the order of the classes) and the grid cell area
-(\code{pixel_area}, Mha).
+cell and class) and three NetCDF files named after the modelling protocol (MP 3.4), with shares of the total
+grid cell area (\code{pixel_area}, Mha; the area of the 0.5 degree cell on a sphere of mean earth radius, or
+the land of the cell where that is larger):
+\itemize{
+\item \code{<projectName>-<scenario>-<model>-<runNr>.nc}: \code{LC_area_share} of the classes, coded 1 to
+12 in the order of the classes;
+\item \code{<projectName>-<scenario>-convyear-<model>-<runNr>.nc}: \code{Fraction}, the area of classes 4
+to 11 by period of conversion. Area that a class gains in the grid cell in a time step gets the period of
+that step (code of the last two digits of its start and end year, 2095 to 2100 = 9510); area it loses
+leaves all periods in proportion. Area of the first year has no period;
+\item \code{<projectName>-<scenario>-fate-aband-recon-<model>-<runNr>.nc}: classes 6 and 7 split into
+\code{LC_area_share_forest} and \code{LC_area_share_nonforest} (\code{calcLandReportBtC2} with
+\code{fate = TRUE}).
+}
+The scenario is the run title without the flag and without underscores (BTC2v12_INT_26: INT26).
 }
 \seealso{
 \code{\link{downscaleRun}}
 }
 \author{
-Patrick v. Jeetze
+Patrick v. Jeetze, Florian Humpenoeder
 }

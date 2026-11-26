@@ -13,7 +13,9 @@ downscaling along the transitions of the model (lists of gdx symbols at cluster 
 landAccounting (cluster land by type and sub-type, upper bounds of the land transitions), landTransitions,
 ageClasses and ageClassTransitions (\code{magpie4::landTransitions}, \code{magpie4::ageClasses},
 \code{magpie4::ageClassTransitions}), peatland, landConservation, snv, bii, climateFixYear, restoration
-(lower bounds of the restoration of secondary forest and other land) and secdforestCarbonDensity}
+(lower bounds of the restoration of secondary forest and other land), secdforestCarbonDensity and
+reconversionForest (secondary forest protected as reconverted managed forest), reconversionAg (agricultural
+land to be reconverted)}
 }
 \description{
 Read function for data coming from the MAgPIE model.

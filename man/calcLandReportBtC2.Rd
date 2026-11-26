@@ -4,10 +4,15 @@
 \alias{calcLandReportBtC2}
 \title{calcLandReportBtC2}
 \usage{
-calcLandReportBtC2(input = "magpie")
+calcLandReportBtC2(input = "magpie", startYear = 2020, fate = FALSE)
 }
 \arguments{
 \item{input}{name of an input dataset, currently only "magpie"}
+
+\item{startYear}{last year before the history classes start}
+
+\item{fate}{FALSE: the classes; TRUE: recon_abn_crop and recon_abn_grass split into forest (young secondary
+forest of other land and secondary forest) and nonforest (other natural land)}
 }
 \value{
 land by grid cell and class (Mha) in the years of the input
@@ -26,34 +31,36 @@ Classes of the state of the land, from the land split (\code{\link{calcLandRepor
 \item nat_regen_forest: primary and secondary forest, NDC forest, and afforestation if it is not
 established as plantation (\code{s32_aff_plantation});
 \item forest_planted: timber plantations, other planted forest, and afforestation as plantation;
-\item built_up_areas: urban land.
+\item built_up: urban land.
 }
-Classes of the history of other land (othernat and youngsecdf), along the grid cell transitions from the
-first year on (\code{\link{toolGriddedLandOrigin}}): area that came from cropland (rest_abn_crop), pasture
-(rest_abn_grass), or timber plantations and other planted forest (rest_forest) keeps its class until it
-leaves other land; the rest (other land of the first year, from NDC forest, afforestation and urban land)
-is other. Maturation to secondary forest and the conversion to NDC forest and to afforestation that is
-not a plantation take the area that entered other land first; all other conversions the area that
-entered last.
+Classes of the history of natural land (other land and secondary forest), along the grid cell transitions
+from \code{startYear} on (\code{\link{toolGriddedLandOrigin}}): area that came from cropland
+(recon_abn_crop), pasture (recon_abn_grass), or timber plantations and other planted forest (recon_forest)
+keeps its class while it stays natural, also when other land matures to secondary forest; the rest is other
+or nat_regen_forest. Conversions take the area that entered last; maturation and the conversion to NDC forest
+and to afforestation that is not a plantation take the area that entered first.
+
+Reconverted managed forest (recon_forest): secondary forest protected from harvest by the reconversion
+targets of the run (\code{p22_reconv_forest}), placed in the grid cells of each cluster in proportion to
+the secondary forest that is not recovering land; placed area is kept where the grid cell keeps it. Where
+that is short, the rest goes to secondary forest from cropland and pasture beyond the cluster's
+reconversion target of agricultural land.
 
 Restoration of the optimisation (the lower bounds \code{p35_land_restoration}): in each cluster the bound
 as share of the transitions into the restored type in the optimisation stage; the transitions of each
-grid cell are split by this share. All outflows of other land except recovery and maturation (conversions
-and harvest) take restored land only after all other area of the type in the grid cell; where the land
-loses more, restored land is taken. Where the same happens on the cluster sums, the model converts the
-restored land itself (MAgPIE protects restored land only as area of its type in the cluster), reported as a
-note; restored land taken beyond that comes from the placement in grid cells and is reported with a warning.
+grid cell are split by this share. Conversions take restored land (and in runs with reconversion targets
+all land from cropland and pasture) only after all other area of the type in the grid cell.
 
-Land that enters secondary forest directly (from cropland, pasture, forestry or urban land) counts as
-recovering land of its origin until it reaches the age at which MAgPIE matures youngsecdf: the first age
-class with a vegetation carbon density of secondary forest above 20 tC/ha in its cluster
-(modules/35_natveg/pot_forest_may24/presolve.gms). A loss of secondary forest in a grid cell takes from
-this land in proportion to the area of secondary forest, from restored land only beyond all other
-secondary forest.
+Rehabilitated cropland and grassland (rehab_crop, rehab_grass), in runs with reconversion targets and the
+file of the rehabilitation targets (\code{rehab_target_0.5.mz}): the grid cell targets along the time path
+of the reconversion targets (\code{s22_reconv_start}, \code{s22_reconv_year1}, \code{s22_reconv_year2}),
+at most the cropland_other and grassland of the grid cell, split between them by their area. Target area
+above that goes to the remaining cropland_other and grassland of the region, in proportion to their area.
+Area placed stays where the grid cell keeps cropland_other and grassland.
 }
 \seealso{
 \code{\link{fullBTC2}}, \code{\link{toolGriddedLandOrigin}}
 }
 \author{
-Patrick v. Jeetze
+Patrick v. Jeetze, Florian Humpenoeder
 }
