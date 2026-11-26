@@ -38,6 +38,7 @@
 #' of the reconversion targets (\code{s22_reconv_start}, \code{s22_reconv_year1}, \code{s22_reconv_year2}),
 #' at most the cropland_other and grassland of the grid cell, split between them by their area. Target area
 #' above that goes to the remaining cropland_other and grassland of the region, in proportion to their area.
+#' Area placed stays where the grid cell keeps cropland_other and grassland.
 #'
 #' @param input name of an input dataset, currently only "magpie"
 #' @param startYear last year before the history classes start
@@ -251,15 +252,22 @@ calcLandReportBtC2 <- function(input = "magpie", startYear = 2020) {
     agHr <- dimSums(stateHr[, , c("cropland_other", "grassland")], dim = 3)
     cellRegion <- mapping[["region"]][match(getCells(landHr), mapping[["cell"]])]
     stopifnot(!anyNA(cellRegion))
+    .regionSum <- function(x) tapply(x, cellRegion, sum)[cellRegion]
+    rehab <- numeric(length(cellRegion))
     for (i in seq_along(years)) {
       target <- as.vector(targetHr[, , "rehab.m1"] * fader1[i] +
                             (targetHr[, , "rehab.m2"] - targetHr[, , "rehab.m1"]) * fader2[i])
       ag <- as.vector(agHr[, i, ])
-      rehab <- pmin(target, ag)
-      # target above the land of the grid cell on the remaining land of the region
-      short <- tapply(target - rehab, cellRegion, sum)[cellRegion]
+      # area of the previous year stays where the grid cell keeps cropland and grassland; then the grid cell
+      # targets, at most the regional target
+      rehab <- pmin(rehab, ag)
+      add <- pmin(pmax(target - rehab, 0), ag - rehab)
+      room <- pmax(.regionSum(target) - .regionSum(rehab), 0)
+      rehab <- rehab + add * pmin(room / replace(.regionSum(add), .regionSum(add) <= 0, 1), 1)
+      # target above the land of the grid cells on the remaining land of the region
+      short <- pmax(.regionSum(target) - .regionSum(rehab), 0)
       rest <- ag - rehab
-      restRegion <- tapply(rest, cellRegion, sum)[cellRegion]
+      restRegion <- .regionSum(rest)
       rehab <- rehab + rest * pmin(short / replace(restRegion, restRegion <= 0, 1), 1)
       rehabHr[, i, ] <- setNames(stateHr[, i, c("cropland_other", "grassland")], c("rehab_crop", "rehab_grass")) *
         as.vector(rehab / replace(ag, ag <= 0, 1))
