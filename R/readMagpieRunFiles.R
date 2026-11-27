@@ -34,6 +34,12 @@ readMagpieRunFiles <- function(subtype) {
     return(list(x = gms::loadConfig(file[["config"]]), class = "list"))
   }
 
+  x <- read.magpie(file[[subtype]])
+  # the BTC2 conservation option comes in its own file
+  if (subtype == "conservationPriority" && file.exists("consv_prio_btc2_0.5.mz") &&
+        !"BTC2" %in% getItems(x, dim = 3.1)) {
+    x <- mbind(x, read.magpie("consv_prio_btc2_0.5.mz"))
+  }
   unit <- if (subtype == "sideLayers") "1" else "Mha"
-  return(list(x = read.magpie(file[[subtype]]), unit = unit, description = paste("MAgPIE run input", file[[subtype]])))
+  return(list(x = x, unit = unit, description = paste("MAgPIE run input", file[[subtype]])))
 }
